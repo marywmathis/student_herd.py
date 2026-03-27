@@ -427,6 +427,195 @@ Longer doubling time = more time for public health response.
 **Relationship to Rt:** The growth rate r = ln(Rt)/Tg. Substituting: Td = ln(2)/r = ln(2) × Tg / ln(Rt).
         """)
 
+    # ── SIR MODEL ─────────────────────────────────────────
+    st.divider()
+    st.markdown(f"### <span style='color:{PRIMARY}'>6. SIR Model — Real Epidemic Curves</span>", unsafe_allow_html=True)
+
+    st.markdown("""
+The milestone table above assumes **pure exponential growth** — cases double forever. In reality, outbreaks slow down and eventually stop because:
+- Infected people **recover** and become immune (removed from susceptible pool)
+- Infected people may **die** (also removed)
+- As susceptibles are depleted, each infected person has fewer people to infect
+
+The **SIR model** (Susceptible → Infectious → Removed) captures this realistically. It shows the epidemic curve: cases rise, peak, and decline.
+    """)
+
+    col1, col2 = st.columns([3,2])
+    with col1:
+        st.markdown(f"""
+<div style='background:{LIGHT_BG}; border-radius:10px; padding:16px; border-top:4px solid {PRIMARY};'>
+<b style='color:{PRIMARY}'>SIR Model Equations:</b><br><br>
+dS/dt = −β × S × I / N<br>
+dI/dt = β × S × I / N − γ × I<br>
+dR/dt = γ × I<br><br>
+Where:<br>
+<b>β</b> = transmission rate = R0 × γ<br>
+<b>γ</b> = removal rate = 1 / infectious period<br>
+<b>S</b> = susceptible, <b>I</b> = infectious, <b>R</b> = removed
+</div>""", unsafe_allow_html=True)
+    with col2:
+        st.markdown(f"""
+<div style='background:#FFF5F0; border-radius:10px; padding:16px; border-top:4px solid {SECONDARY};'>
+<b style='color:{SECONDARY}'>Key insight:</b><br><br>
+The outbreak peaks when Rt = R0 × S/N = 1 — i.e., when enough people have been infected/vaccinated that the effective R drops to 1.<br><br>
+After the peak, S/N continues to fall → Rt stays below 1 → outbreak declines.<br><br>
+This is why outbreaks end before infecting 100% of the population.
+</div>""", unsafe_allow_html=True)
+
+    st.markdown("#### SIR Epidemic Curve Simulator")
+
+    SIR_PRESETS = {
+        "Custom — enter my own values": None,
+        "Measles (unvaccinated population)":    {"r0": 15.0, "infectious_days": 8,  "cfr": 0.2,  "pop": 100000, "initial_infected": 10},
+        "COVID-19 — Original strain":           {"r0": 2.5,  "infectious_days": 10, "cfr": 1.0,  "pop": 100000, "initial_infected": 10},
+        "COVID-19 — Omicron variant":           {"r0": 10.0, "infectious_days": 7,  "cfr": 0.15, "pop": 100000, "initial_infected": 10},
+        "Influenza (seasonal)":                 {"r0": 1.5,  "infectious_days": 5,  "cfr": 0.1,  "pop": 100000, "initial_infected": 10},
+        "Ebola":                                {"r0": 1.8,  "infectious_days": 12, "cfr": 50.0, "pop": 100000, "initial_infected": 10},
+        "Smallpox":                             {"r0": 6.0,  "infectious_days": 17, "cfr": 30.0, "pop": 100000, "initial_infected": 10},
+    }
+
+    sir_preset_choice = st.selectbox("Load a disease preset:", list(SIR_PRESETS.keys()), key=f"lrn_sir_preset_{lrc}")
+    sir_preset = SIR_PRESETS[sir_preset_choice]
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        sir_r0 = st.number_input("R0", min_value=1.01, max_value=20.0,
+            value=float(sir_preset["r0"]) if sir_preset else 3.0, step=0.1, key=f"lrn_sir_r0_{lrc}")
+        sir_infectious = st.number_input("Infectious period (days)", min_value=1, max_value=30,
+            value=int(sir_preset["infectious_days"]) if sir_preset else 7, key=f"lrn_sir_inf_{lrc}")
+    with col2:
+        sir_cfr = st.number_input("Case Fatality Rate (%)", min_value=0.0, max_value=100.0,
+            value=float(sir_preset["cfr"]) if sir_preset else 1.0, step=0.1, key=f"lrn_sir_cfr_{lrc}")
+        sir_pop = st.number_input("Population size", min_value=1000, max_value=10000000,
+            value=int(sir_preset["pop"]) if sir_preset else 100000, step=1000, key=f"lrn_sir_pop_{lrc}")
+    with col3:
+        sir_vacc = st.slider("% Already immune (vaccination/prior infection)", 0, 95, 0, 5, key=f"lrn_sir_vacc_{lrc}")
+        sir_initial = st.number_input("Initial infected cases", min_value=1, max_value=1000,
+            value=int(sir_preset["initial_infected"]) if sir_preset else 10, key=f"lrn_sir_init_{lrc}")
+
+    N = sir_pop
+    gamma = 1.0 / sir_infectious
+    beta = sir_r0 * gamma
+    cfr_frac = sir_cfr / 100.0
+
+    S0 = N * (1 - sir_vacc/100) - sir_initial
+    I0 = sir_initial
+    R0_sir = N * (sir_vacc/100)
+
+    S, I, R = [S0], [I0], [R0_sir]
+    dt = 0.5
+    max_days = 365
+    steps = int(max_days / dt)
+
+    for _ in range(steps):
+        s, i, r = S[-1], I[-1], R[-1]
+        new_inf = beta * s * i / N * dt
+        new_rem = gamma * i * dt
+        S.append(max(0, s - new_inf))
+        I.append(max(0, i + new_inf - new_rem))
+        R.append(r + new_rem)
+
+    sample_days = list(range(0, max_days+1, 2))
+    sample_idx = [int(d/dt) for d in sample_days if int(d/dt) < len(S)]
+    s_vals = [S[i] for i in sample_idx]
+    i_vals = [I[i] for i in sample_idx]
+    r_vals = [R[i] for i in sample_idx]
+    days_sampled = [sample_days[j] for j in range(len(sample_idx))]
+
+    peak_i = max(i_vals)
+    peak_day = days_sampled[i_vals.index(peak_i)]
+    total_infected = N - s_vals[-1]
+    total_deaths = round(total_infected * cfr_frac)
+    attack_rate = round(total_infected / N * 100, 1)
+
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Peak simultaneously infectious", f"{round(peak_i):,}")
+    col2.metric("Day of peak", f"Day {peak_day}")
+    col3.metric("Total infected (final)", f"{round(total_infected):,}", help=f"Attack rate: {attack_rate}%")
+    col4.metric("Estimated deaths", f"{total_deaths:,}", help=f"CFR = {sir_cfr}%")
+
+    max_val = max(max(i_vals), max(s_vals)) * 1.05
+    chart_w, chart_h = 860, 280
+    pad_l, pad_r, pad_t, pad_b = 60, 20, 20, 40
+
+    def cx(day): return pad_l + (day / max_days) * (chart_w - pad_l - pad_r)
+    def cy(val): return pad_t + chart_h - pad_b - (val / max_val) * (chart_h - pad_t - pad_b)
+
+    s_pts = " ".join(f"{cx(d):.1f},{cy(v):.1f}" for d, v in zip(days_sampled, s_vals))
+    i_pts = " ".join(f"{cx(d):.1f},{cy(v):.1f}" for d, v in zip(days_sampled, i_vals))
+    r_pts = " ".join(f"{cx(d):.1f},{cy(v):.1f}" for d, v in zip(days_sampled, r_vals))
+
+    y_ticks = [round(max_val * i / 4) for i in range(5)]
+    y_tick_html = "".join(f"<text x='{pad_l-6}' y='{cy(t)+4:.0f}' text-anchor='end' font-size='10' fill='#888'>{t:,}</text>" for t in y_ticks)
+    x_tick_days = [0, 60, 120, 180, 240, 300, 365]
+    x_tick_html = "".join(f"<text x='{cx(d):.0f}' y='{chart_h+2}' text-anchor='middle' font-size='10' fill='#888'>Day {d}</text>" for d in x_tick_days if d <= max_days)
+    peak_x = cx(peak_day)
+    grid_lines = "".join(f"<line x1='{pad_l}' y1='{cy(t):.0f}' x2='{chart_w-pad_r}' y2='{cy(t):.0f}' stroke='#eee' stroke-width='1'/>" for t in y_ticks)
+
+    svg = f"""<svg xmlns='http://www.w3.org/2000/svg' width='100%' viewBox='0 0 {chart_w} {chart_h+10}' style='display:block; background:#fafafa; border-radius:8px; border:1px solid #e0e0e0;'>
+  {grid_lines}
+  <line x1='{peak_x:.0f}' y1='{pad_t}' x2='{peak_x:.0f}' y2='{chart_h-pad_b}' stroke='#c0392b' stroke-width='1' stroke-dasharray='4,3' opacity='0.6'/>
+  <text x='{min(peak_x+4, chart_w-80):.0f}' y='{pad_t+14}' font-size='10' fill='#c0392b'>Peak day {peak_day}</text>
+  <polyline points='{s_pts}' fill='none' stroke='{PRIMARY}' stroke-width='2' opacity='0.8'/>
+  <polyline points='{i_pts}' fill='none' stroke='{SECONDARY}' stroke-width='2.5'/>
+  <polyline points='{r_pts}' fill='none' stroke='#2e7d32' stroke-width='2' opacity='0.8'/>
+  <line x1='{pad_l}' y1='{pad_t}' x2='{pad_l}' y2='{chart_h-pad_b}' stroke='#ccc' stroke-width='1'/>
+  <line x1='{pad_l}' y1='{chart_h-pad_b}' x2='{chart_w-pad_r}' y2='{chart_h-pad_b}' stroke='#ccc' stroke-width='1'/>
+  {y_tick_html}
+  {x_tick_html}
+  <rect x='{chart_w-160}' y='30' width='12' height='3' fill='{PRIMARY}'/>
+  <text x='{chart_w-144}' y='35' font-size='11' fill='{PRIMARY}'>Susceptible</text>
+  <rect x='{chart_w-160}' y='48' width='12' height='3' fill='{SECONDARY}'/>
+  <text x='{chart_w-144}' y='53' font-size='11' fill='{SECONDARY}'>Infectious</text>
+  <rect x='{chart_w-160}' y='66' width='12' height='3' fill='#2e7d32'/>
+  <text x='{chart_w-144}' y='71' font-size='11' fill='#2e7d32'>Removed</text>
+</svg>"""
+
+    st.markdown(svg, unsafe_allow_html=True)
+    st.caption(f"Population: {N:,} | R0 = {sir_r0} | Infectious period: {sir_infectious} days | CFR: {sir_cfr}% | Starting immunity: {sir_vacc}% | Starting cases: {sir_initial}")
+
+    st.markdown(f"""
+**What this curve shows:**
+- **Blue (Susceptible):** Starts near {N:,}, falls as people get infected. Final susceptibles: ~{round(s_vals[-1]):,} — escaped infection.
+- **Orange (Infectious):** Rises, peaks at **Day {peak_day}** with ~{round(peak_i):,} simultaneously infectious, then declines.
+- **Green (Removed):** Accumulates recovered + dead. Total infected: ~{round(total_infected):,} ({attack_rate}% attack rate).
+- **The outbreak ends before infecting everyone** — it stops when Rt drops below 1 due to depletion of susceptibles.
+    """)
+
+    with st.expander("💡 What happens when you change the parameters?"):
+        st.markdown(f"""
+**Increase R0:** Peak is higher and earlier. More of the population gets infected.
+
+**Decrease infectious period:** Faster removal → lower peak → smaller total outbreak. Effective isolation shortens the infectious period.
+
+**Increase starting immunity:** Peak is dramatically lower. If immunity exceeds the HIT ({round((1-1/sir_r0)*100,1)}% for R0={sir_r0}), the outbreak barely gets started.
+
+**Increase CFR:** Does not change the curve shape — CFR affects deaths, not transmission. The curve looks the same; the death toll changes.
+
+**Try this:** Set starting immunity to {round((1-1/sir_r0)*100,1)}% (the HIT for R0={sir_r0}). Watch what happens to the peak.
+        """)
+
+    with st.expander("📐 Show me the math — SIR Model"):
+        st.markdown(f"""
+**Parameters:**
+- β (transmission rate) = R0 × γ = {sir_r0} × {round(gamma,4)} = **{round(beta,4)}** per day
+- γ (removal rate) = 1 / {sir_infectious} days = **{round(gamma,4)}** per day
+
+**The three equations (solved numerically each half-day):**
+
+dS/dt = −β × S × I / N  →  new infections per day
+
+dI/dt = β × S × I / N − γ × I  →  change in infectious count
+
+dR/dt = γ × I  →  removals per day (recovered + dead)
+
+**Attack rate** = (N − S_final) / N = {round(total_infected):,} / {N:,} = **{attack_rate}%**
+
+**Deaths** = total infected × CFR = {round(total_infected):,} × {round(cfr_frac,4)} = **{total_deaths:,}**
+
+**Why doesn't 100% get infected?** The outbreak self-limits when Rt = R0 × S/N falls below 1. At that point fewer than {round(1/sir_r0*100,1)}% are still susceptible and the virus can't sustain transmission.
+        """)
+
 # ══════════════════════════════════════════════════════════
 # TAB 2: PRACTICE
 # ══════════════════════════════════════════════════════════
